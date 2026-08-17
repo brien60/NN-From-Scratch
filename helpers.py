@@ -1,4 +1,5 @@
 import math
+import numpy as np
 
 def matrix_mult(M, N):
     m, n, r = len(M), len(M[0]), len(N[0])
@@ -57,6 +58,19 @@ def vector_softmax(z):
     return matrix_scalar_mult(1/sum, result)
         
 
+def np_softmax(z):
+    assert len(z.shape) == 1, print("This function only works on vectors")
+    m = z.shape[0]
+
+    result = np.zeros_like(z)
+
+    sum = 0.0
+    for i in range(m):
+        e = math.exp(z[i])
+        result[i] = e
+        sum += e
+
+    return np.array(result).reshape(-1, 1) * (1/sum)
 
 
 def transpose(M):
@@ -72,16 +86,22 @@ def transpose(M):
 
 
 def sigmoid(x):
-    return 1 / (1 + math.exp(-x))
+    try:
+        return 1 / (1 + math.exp(-x))
+    except:
+        print(x)
 
 def dsigmoid(x):
     return sigmoid(x) * (1-sigmoid(x))
 
+def vector_sigmoid(z):
+    return [[sigmoid(z[i][0])] for i in range(len(z))]
+    
 def vector_dsigmoid(z):
     return [[dsigmoid(z[i][0])] for i in range(len(z))]
 
+def np_sigmoid(z):
+    return np.array([sigmoid(z[i]) for i in range(len(z))]).reshape(-1, 1)
 
-def vector_sigmoid(z):
-    return [[sigmoid(z[i][0])] for i in range(len(z))]
-
-
+def np_dsigmoid(z):
+    return np.array([dsigmoid(z[i]) for i in range(len(z))]).reshape(-1, 1)

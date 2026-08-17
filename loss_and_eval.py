@@ -18,7 +18,10 @@ def BCE(y, a):
 
 # negative log-likelihood loss
 def NLL(y, a):
-    return -math.log(a[np.argmax(y)][0])
+    try: 
+        return -math.log(a[np.argmax(y)][0])
+    except Exception: 
+        return -math.log(a[np.argmax(y)])
 
 # L2 Regularization
 def L2(model, optim):
