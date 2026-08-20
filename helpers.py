@@ -70,7 +70,7 @@ def np_softmax(z):
         result[i] = e
         sum += e
 
-    return np.array(result).reshape(-1, 1) * (1/sum)
+    return np.array(result) * (1/sum)
 
 
 def transpose(M):
@@ -86,10 +86,7 @@ def transpose(M):
 
 
 def sigmoid(x):
-    try:
-        return 1 / (1 + math.exp(-x))
-    except:
-        print(x)
+    return 1 / (1 + math.exp(-x))
 
 def dsigmoid(x):
     return sigmoid(x) * (1-sigmoid(x))
@@ -101,7 +98,7 @@ def vector_dsigmoid(z):
     return [[dsigmoid(z[i][0])] for i in range(len(z))]
 
 def np_sigmoid(z):
-    return np.array([sigmoid(z[i]) for i in range(len(z))]).reshape(-1, 1)
+    return np.array([sigmoid(z[i]) for i in range(len(z))])
 
 def np_dsigmoid(z):
-    return np.array([dsigmoid(z[i]) for i in range(len(z))]).reshape(-1, 1)
+    return np.array([dsigmoid(z[i]) for i in range(len(z))])

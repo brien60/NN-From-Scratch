@@ -1,5 +1,6 @@
 import numpy as np
 import math
+from cnn import MaxPool
 
 # quadratic loss
 def quadratic_loss(y, a):
@@ -32,9 +33,8 @@ def L2(model, optim):
 
     weight_squared_sum = 0.0
     for layer in model.layers:
-        for row in layer.W:
-            for weight in row:
-                weight_squared_sum += weight ** 2
+        if type(layer) != MaxPool:
+            weight_squared_sum += np.sum(np.array(layer.W) ** 2)
 
     return lambda_over_2n * weight_squared_sum
 
