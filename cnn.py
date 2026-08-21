@@ -1,4 +1,4 @@
-import numpy as np
+import cupy as np
 import math
 
 from helpers import *
@@ -8,7 +8,8 @@ from optim import *
 
 
 class Layer:
-    def __init__(self, input_neurons, output_neurons, softmax = False, output_layer = False):
+    def __init__(self, batch_size, input_neurons, output_neurons, softmax = False, output_layer = False):
+        self.batch_size = batch_size
         self.j = output_neurons
         self.k = input_neurons
 
@@ -28,7 +29,9 @@ class Layer:
 
 
     def forward(self, prev_activations):
-        z = np.add(self.W @ prev_activations.reshape(self.k), self.b) # (j, ) 
+        prev_activations = prev_activations.reshape(self.batch_size, self.k)
+        # (j, k) @ (batch_size, k).T = (j, batch_size)
+        z = np.add((self.W @ prev_activations.T).T, self.b) # (batch_size, j) 
 
         if self.softmax: a = np_softmax(z)
         else: a = np_sigmoid(z)
@@ -36,7 +39,8 @@ class Layer:
         self.activations = a
         self.weighted_inputs = z
 
-        return a # (j, )
+        # print(f"layer: {z.shape}")
+        return a # (batch_size, j)
         
 
 
@@ -46,15 +50,17 @@ class Layer:
             # print(f"output layer: {dZ.shape}")
 
         else:
-            dZ = (next_W_T @ next_dZ) * np_dsigmoid(self.weighted_inputs) # BP2
+            # (j, n) @ (batch_size, n).T = (j, batch_size)
+            dZ = (next_W_T @ next_dZ.T).T * np_dsigmoid(self.weighted_inputs) # BP2
             
         # BP3
-        dW = dZ.reshape(-1, 1) @ prev_activations.reshape(self.k, 1).T
+        # (batch_size, j).T @ (batch_size, k) = (j, k)
+        dW = dZ.T @ prev_activations.reshape(self.batch_size, self.k)
 
 
         # BP4
         self.dW = np.add(self.dW, dW)
-        self.dB = np.add(self.dB, dZ)
+        self.dB = np.add(self.dB, np.sum(dZ, axis=0))
 
         return dZ
 
@@ -66,7 +72,8 @@ class Layer:
 
 
 class Convolution:
-    def __init__(self, filters, channels, kernel_size, input_size, stride = 1):
+    def __init__(self, batch_size, filters, channels, kernel_size, input_size, stride = 1):
+        self.batch_size = batch_size
         self.filters = filters
         self.channels = channels
         self.kernel_size = kernel_size
@@ -136,20 +143,25 @@ class Convolution:
 
     # matrix implementation
     def forward(self, x):
-        W_matrix =  self.W.reshape(self.filters, -1)
-        patches_matrix = np.zeros((self.channels * self.kernel_size ** 2, self.output_size ** 2))
+        # x: (batch_size, channels, input_size, input_size)
+        W_matrix =  self.W.reshape(self.filters, -1) # (filters, c*k*k)
+        patches_matrix = np.zeros((self.batch_size, self.channels * self.kernel_size ** 2, self.output_size ** 2)) # (batch_size, c*k*k, output_size**2)
 
         p = 0
         for i in range(self.output_size):
             for j in range(self.output_size):
                 start_i, start_j = self.stride*i, self.stride*j
                 offset = self.kernel_size
-                patches_matrix[:, p] = x[:, start_i : start_i + offset, start_j : start_j + offset].reshape(-1)
+                # print(patches_matrix.shape)
+                # print(patches_matrix[:, :, p].shape)
+                # print(x[:, :, start_i : start_i + offset, start_j : start_j + offset].shape)
+                patches_matrix[:, :, p] = x[:, :, start_i : start_i + offset, start_j : start_j + offset].reshape(self.batch_size, -1)
 
                 p+=1
 
-        self.weighted_inputs = (W_matrix @ patches_matrix).reshape(self.filters, self.output_size, self.output_size)
-        f_maps = np_sigmoid(self.weighted_inputs.reshape(-1)).reshape(self.filters, self.output_size, self.output_size)
+        z = W_matrix @ patches_matrix # (batch_size, filters, output_size**2)
+        self.weighted_inputs = z.reshape(self.batch_size, self.filters, self.output_size, self.output_size)
+        f_maps = np_sigmoid(z.reshape(self.batch_size, -1)).reshape(self.batch_size, self.filters, self.output_size, self.output_size)
 
         return f_maps
 
@@ -158,16 +170,18 @@ class Convolution:
 
 
     def backward(self, prev_activations, dA):
+        # prev_activations: (batch_size, channels, input_size, input_size)
+        # dA: (batch_size, channels, output_size, output_size)
 
-        dZ = np.zeros(shape = (self.filters, self.output_size, self.output_size))
-        prev_dA = np.zeros(shape = (self.channels, self.input_size, self.input_size))
+        dZ = np.zeros(shape = (self.batch_size, self.filters, self.output_size, self.output_size))
+        prev_dA = np.zeros(shape = (self.batch_size, self.channels, self.input_size, self.input_size))
 
 
         for f in range(self.filters):
             for i in range(self.output_size):
                 for j in range(self.output_size):
-                    dZ[f][i][j] = dA[f][i][j] * dsigmoid(self.weighted_inputs[f][i][j]) # calculcate dZ
-                    self.dB[f] += dZ[f][i][j] # update bias gradient
+                    dZ[:, f, i, j] = dA[:, f, i, j] * list_dsigmoid(self.weighted_inputs[:, f, i, j]) # calculcate dZ
+                    self.dB[f] += np.sum(dZ[:, f, i, j]) # update bias gradient
 
                     for u in range(self.kernel_size):
                         for v in range(self.kernel_size):
@@ -176,8 +190,8 @@ class Convolution:
                                 row = self.stride * i + u
                                 col = self.stride * j + v
 
-                                self.dW[f][c][u][v] += dZ[f][i][j] * prev_activations[c][row][col] # update weight gradient
-                                prev_dA[c][row][col] += dZ[f][i][j] * W[u][v] # calculate dA for the previous layer
+                                self.dW[f][c][u][v] += np.sum(dZ[:, f, i, j] * prev_activations[:, c, row, col]) # update weight gradient
+                                prev_dA[:, c, row, col] += dZ[:, f, i, j] * W[u][v] # calculate dA for the previous layer
  
 
         return prev_dA
@@ -188,7 +202,8 @@ class Convolution:
 
 
 class MaxPool:
-    def __init__(self, f_maps, input_size, pool_size):
+    def __init__(self, batch_size, f_maps, input_size, pool_size):
+        self.batch_size = batch_size
         self.f_maps = f_maps
         self.input_size = input_size
         self.pool_size = pool_size
@@ -196,48 +211,61 @@ class MaxPool:
         assert self.input_size % self.pool_size == 0, f"Pool size {self.pool_size} is not valid for {self.input_size}x{self.input_size} feature maps"
         self.output_size = self.input_size // self.pool_size
 
-        self.dZ_prev_dA = np.zeros(shape = (self.f_maps, self.input_size, self.input_size))
+        self.dZ_prev_dA = np.zeros(shape = (self.batch_size, self.f_maps, self.input_size, self.input_size))
 
 
     def __call__(self, f_maps):
         return self.forward(f_maps)
 
     def forward(self, f_maps):
-        pooled_f_maps = np.zeros(shape = (self.f_maps, self.output_size, self.output_size))
+        pooled_f_maps = np.zeros(shape = (self.f_maps, self.batch_size, self.output_size, self.output_size))
 
         for f in range(self.f_maps):
-            f_map = f_maps[f]
-            pooled_f_map = np.zeros(shape = (self.output_size, self.output_size))
+            f_map = f_maps[:, f] # (batch_size, input_size, input_size)
+            pooled_f_map = np.zeros(shape = (self.batch_size, self.output_size, self.output_size))
 
             for i in range(self.output_size):
                 for j in range(self.output_size):
 
-                    a = float("-inf")
-                    max_i, max_j = 0, 0
+                    # a = float("-inf")
+                    # max_is, max_js = [], []
 
-                    for u in range(self.pool_size):
-                        for v in range(self.pool_size):
-                            row = i * self.pool_size + u
-                            col = j * self.pool_size + v
+                    # for u in range(self.pool_size):
+                    #     for v in range(self.pool_size):
+                    #         row = i * self.pool_size + u
+                    #         col = j * self.pool_size + v
 
-                            if f_map[row][col] > a:
-                                a = f_map[row][col]
-                                max_i, max_j = row, col
+                    #         if f_map[row][col] > a:
+                    #             a = f_map[row][col]
+                    #             max_i, max_j = row, col
 
-                    pooled_f_map[i][j] = a
-                    self.dZ_prev_dA[f][max_i][max_j] = 1.0
+                    row = i * self.pool_size
+                    col = j * self.pool_size
+
+                    windows = f_map[:, row:row+self.pool_size, col:col+self.pool_size] # (batch_size, pool_size, pool_size)
+                    flattened_windows = windows.reshape((self.batch_size, -1)) # (batch_size, pool_size**2)
+
+                    max_indices = np.argmax(flattened_windows, axis = 1) # (batch_size, )
+                    # print(flattened_windows[max_indices].shape)
+                    # print(max_indices.shape)
+                    pooled_f_map[:, i, j] = flattened_windows[np.arange(self.batch_size), max_indices]
+
+                    max_rows = max_indices // self.pool_size
+                    max_cols = max_indices % self.pool_size
+                    self.dZ_prev_dA[:, f, max_rows, max_cols] = 1.0
                     
 
-
             pooled_f_maps[f] = pooled_f_map
-        return pooled_f_maps
+
+        return pooled_f_maps.reshape(self.batch_size, self.f_maps, self.output_size, self.output_size)
 
 
     
 
     def backward(self, next_W_T, next_dZ):
-        dZ = np.reshape(next_W_T @ next_dZ, (self.f_maps, self.output_size, self.output_size))
-        prev_dA = np.zeros(shape = (self.f_maps, self.input_size, self.input_size)) 
+        # (f_maps*output_size**2, n) @ (batch_size, n).T = (f_maps*output_size**2, batch_size)
+        dZ = np.reshape(next_W_T @ next_dZ.T, (self.batch_size, self.f_maps, self.output_size, self.output_size))
+        prev_dA = np.zeros(shape = (self.batch_size, self.f_maps, self.input_size, self.input_size)) 
 
         for f in range(self.f_maps):
             for i in range(self.output_size):
@@ -247,7 +275,7 @@ class MaxPool:
                             row = i * self.pool_size + u
                             col = j * self.pool_size + v
 
-                            prev_dA[f][row][col] = dZ[f][i][j] * self.dZ_prev_dA[f][row][col] # calc dA of previous layer
+                            prev_dA[:, f, row, col] = dZ[:, f, i, j] * self.dZ_prev_dA[:, f, row, col] # calc dA of previous layer
 
         return prev_dA
         
@@ -256,16 +284,18 @@ class MaxPool:
 
 
 class CNN:
-    def __init__(self, filters_list):
+    def __init__(self, batch_size, filters_list):
 
-        self.conv1 = Convolution(filters=filters_list[0], channels=1, kernel_size=5, input_size=28)
-        self.pool1 = MaxPool(f_maps=filters_list[0], input_size=self.conv1.output_size, pool_size=2)
+        self.conv1 = Convolution(batch_size=batch_size, filters=filters_list[0], channels=1, kernel_size=5, input_size=28)
+        self.pool1 = MaxPool(batch_size=batch_size, f_maps=filters_list[0], input_size=self.conv1.output_size, pool_size=2)
         
         self.layer1 = Layer(
+            batch_size=batch_size,
             input_neurons=self.pool1.f_maps * self.pool1.output_size ** 2,
             output_neurons=100,
         )
         self.classifier = Layer(
+            batch_size=batch_size,
             input_neurons=100, output_neurons=10,
             output_layer=True, softmax=True
         )

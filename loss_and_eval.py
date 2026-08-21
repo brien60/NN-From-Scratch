@@ -1,4 +1,4 @@
-import numpy as np
+import cupy as np
 import math
 from cnn import MaxPool
 
@@ -19,10 +19,11 @@ def BCE(y, a):
 
 # negative log-likelihood loss
 def NLL(y, a):
-    try: 
-        return -math.log(a[np.argmax(y)][0])
-    except Exception: 
-        return -math.log(a[np.argmax(y)])
+    return -math.log(a[np.argmax(y)][0])
+
+def batch_NLL(y, a):
+    b = y.shape[0]
+    return np.sum(-np.log(a[np.arange(b), np.argmax(y, axis=1)]))
 
 # L2 Regularization
 def L2(model, optim):
@@ -40,4 +41,4 @@ def L2(model, optim):
 
 
 def acc(y, a):
-    return np.argmax(y) == np.argmax(a)
+    return np.sum(np.argmax(y, axis=1) == np.argmax(a, axis=1))
