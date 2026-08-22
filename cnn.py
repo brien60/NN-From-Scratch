@@ -1,4 +1,4 @@
-import cupy as np
+import numpy as np
 import math
 
 from helpers import *
@@ -13,7 +13,7 @@ class Layer:
         self.j = output_neurons
         self.k = input_neurons
 
-        self.W = np.random.normal(scale = 1/math.sqrt(self.j), size = (self.j, self.k))
+        self.W = np.random.normal(scale = 1/math.sqrt(self.k), size = (self.j, self.k))
         self.b = np.random.normal(size = self.j)
 
         self.activations = None
@@ -84,6 +84,7 @@ class Convolution:
 
  
         self.W = np.random.normal(
+            scale = 1/math.sqrt(self.channels * self.kernel_size ** 2),
             size = (self.filters, self.channels, self.kernel_size, self.kernel_size)
         )
         self.b = np.random.normal(
@@ -159,7 +160,7 @@ class Convolution:
 
                 p+=1
 
-        z = W_matrix @ patches_matrix # (batch_size, filters, output_size**2)
+        z = W_matrix @ patches_matrix + self.b[None, :, None] # (batch_size, filters, output_size**2)
         self.weighted_inputs = z.reshape(self.batch_size, self.filters, self.output_size, self.output_size)
         f_maps = np_sigmoid(z.reshape(self.batch_size, -1)).reshape(self.batch_size, self.filters, self.output_size, self.output_size)
 
@@ -252,12 +253,13 @@ class MaxPool:
 
                     max_rows = max_indices // self.pool_size
                     max_cols = max_indices % self.pool_size
-                    self.dZ_prev_dA[:, f, max_rows, max_cols] = 1.0
+                    self.dZ_prev_dA[:, f, row + max_rows, col + max_cols] = 1.0
                     
 
             pooled_f_maps[f] = pooled_f_map
 
-        return pooled_f_maps.reshape(self.batch_size, self.f_maps, self.output_size, self.output_size)
+        # SWAPPING dimensions, not combining them
+        return pooled_f_maps.transpose(1, 0, 2, 3)
 
 
     

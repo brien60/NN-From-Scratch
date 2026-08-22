@@ -1,5 +1,5 @@
 import math
-import cupy as np
+import numpy as np
 
 def matrix_mult(M, N):
     m, n, r = len(M), len(M[0]), len(N[0])
