@@ -212,13 +212,15 @@ class MaxPool:
         assert self.input_size % self.pool_size == 0, f"Pool size {self.pool_size} is not valid for {self.input_size}x{self.input_size} feature maps"
         self.output_size = self.input_size // self.pool_size
 
-        self.dZ_prev_dA = np.zeros(shape = (self.batch_size, self.f_maps, self.input_size, self.input_size))
+        # self.dZ_prev_dA = np.zeros(shape = (self.batch_size, self.f_maps, self.input_size, self.input_size))
 
 
     def __call__(self, f_maps):
         return self.forward(f_maps)
 
     def forward(self, f_maps):
+        self.dZ_prev_dA = np.zeros(shape = (self.batch_size, self.f_maps, self.input_size, self.input_size))
+        
         pooled_f_maps = np.zeros(shape = (self.f_maps, self.batch_size, self.output_size, self.output_size))
 
         for f in range(self.f_maps):
