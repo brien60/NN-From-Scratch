@@ -52,7 +52,7 @@ class Layer:
             # print(f"output layer: {dZ.shape}")
         else:
             # (j, n) @ (batch_size, n).T = (j, batch_size)
-            dZ = (next_W_T @ next_dZ.T).T * np_dsigmoid(self.weighted_inputs) # BP2
+            dZ = (next_W_T @ next_dZ.T).T * self.activations * (1-self.activations) # BP2
             
         # BP3
         # (batch_size, j).T @ (batch_size, k) = (j, k)
@@ -166,7 +166,9 @@ class Convolution:
         self.patches_matrix = patches_matrix
         self.weighted_inputs = z.reshape(self.batch_size, self.filters, self.output_size, self.output_size)
 
-        f_maps = np_sigmoid(z.reshape(self.batch_size, -1)).reshape(self.batch_size, self.filters, self.output_size, self.output_size)
+        f_maps = np_sigmoid(self.weighted_inputs)
+
+        self.activations = f_maps
 
         return f_maps
 
@@ -181,7 +183,7 @@ class Convolution:
         dZ = np.zeros(shape = (self.batch_size, self.filters, self.output_size, self.output_size))
         prev_dA = np.zeros(shape = (self.batch_size, self.channels, self.input_size, self.input_size))
 
-        dZ = dA * np_dsigmoid(self.weighted_inputs) # calculcate dZ
+        dZ = dA * self.activations * (1-self.activations) # calculcate dZ
         self.dB += np.sum(dZ.transpose(1, 0, 2, 3).reshape(self.filters, -1), axis=1) # update bias gradient
 
 
@@ -196,7 +198,7 @@ class Convolution:
                     dZ[:, :, i, j],
                     self.W
                 )
-                prev_dA[:, :, row : row+self.kernel_size, col : col+self.kernel_size] = prev_dA_patch
+                prev_dA[:, :, row : row+self.kernel_size, col : col+self.kernel_size] += prev_dA_patch
 
 
                 # for u in range(self.kernel_size):
@@ -287,7 +289,7 @@ class MaxPool:
 
     def backward(self, next_W_T, next_dZ):
         # (f_maps*output_size**2, n) @ (batch_size, n).T = (f_maps*output_size**2, batch_size)
-        dZ = np.reshape(next_W_T @ next_dZ.T, (self.batch_size, self.f_maps, self.output_size, self.output_size))
+        dZ = np.reshape((next_W_T @ next_dZ.T).T, (self.batch_size, self.f_maps, self.output_size, self.output_size))
         prev_dA = np.zeros(shape = (self.batch_size, self.f_maps, self.input_size, self.input_size)) 
 
         for f in range(self.f_maps):
