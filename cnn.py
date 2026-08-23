@@ -185,26 +185,29 @@ class Convolution:
         self.dB += np.sum(dZ.transpose(1, 0, 2, 3).reshape(self.filters, -1), axis=1) # update bias gradient
 
 
-        for f in range(self.filters):
-            for i in range(self.output_size):
-                for j in range(self.output_size):
-                    row = self.stride * i
-                    col = self.stride * j
+        for i in range(self.output_size):
+            for j in range(self.output_size):
+                row = self.stride * i
+                col = self.stride * j
 
-                    
-                    prev_dA_patch = dZ[:, f, i, j][:, None, None, None] * self.W[f][None, :, :, :] # (batch_size, 1, 1, 1) * (1, c, k, k) = (batch_size, c, k, k)
-                    prev_dA[:, :, row : row+self.kernel_size, col : col+self.kernel_size] = prev_dA_patch
+                # (batch_size, 1, 1, 1) * (1, c, k, k) = (batch_size, c, k, k)
+                prev_dA_patch = np.einsum(
+                    "bf, fcuv->bcuv",
+                    dZ[:, :, i, j],
+                    self.W
+                )
+                prev_dA[:, :, row : row+self.kernel_size, col : col+self.kernel_size] = prev_dA_patch
 
 
-                    # for u in range(self.kernel_size):
-                    #     for v in range(self.kernel_size):
-                    #         for c in range(self.channels): 
-                    #             W = self.W[f, c, :, :]
-                    #             row = self.stride * i + u
-                    #             col = self.stride * j + v
+                # for u in range(self.kernel_size):
+                #     for v in range(self.kernel_size):
+                #         for c in range(self.channels): 
+                #             W = self.W[f, c, :, :]
+                #             row = self.stride * i + u
+                #             col = self.stride * j + v
 
-                    #             # self.dW[f][c][u][v] += np.sum(dZ[:, f, i, j] * prev_activations[:, c, row, col]) # update weight gradient
-                    #             prev_dA[:, c, row, col] += dZ[:, f, i, j] * W[u][v]  # calculate dA for the previous layer
+                #             # self.dW[f][c][u][v] += np.sum(dZ[:, f, i, j] * prev_activations[:, c, row, col]) # update weight gradient
+                #             prev_dA[:, c, row, col] += dZ[:, f, i, j] * W[u][v]  # calculate dA for the previous layer
 
                                 
 
