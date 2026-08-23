@@ -219,8 +219,8 @@ class MaxPool:
         return self.forward(f_maps)
 
     def forward(self, f_maps):
-        self.dZ_prev_dA = np.zeros(shape = (self.batch_size, self.f_maps, self.input_size, self.input_size))
-        
+        self.max_indices = np.zeros(shape = (self.batch_size, self.f_maps, self.output_size, self.output_size))
+
         pooled_f_maps = np.zeros(shape = (self.f_maps, self.batch_size, self.output_size, self.output_size))
 
         for f in range(self.f_maps):
@@ -253,9 +253,8 @@ class MaxPool:
                     # print(max_indices.shape)
                     pooled_f_map[:, i, j] = flattened_windows[np.arange(self.batch_size), max_indices]
 
-                    max_rows = max_indices // self.pool_size
-                    max_cols = max_indices % self.pool_size
-                    self.dZ_prev_dA[:, f, row + max_rows, col + max_cols] = 1.0
+                   
+                    self.max_indices[:, f, i, j] = max_indices
                     
 
             pooled_f_maps[f] = pooled_f_map
@@ -274,12 +273,13 @@ class MaxPool:
         for f in range(self.f_maps):
             for i in range(self.output_size):
                 for j in range(self.output_size):
-                    for u in range(self.pool_size):
-                        for v in range(self.pool_size):
-                            row = i * self.pool_size + u
-                            col = j * self.pool_size + v
+                    row = i * self.pool_size
+                    col = j * self.pool_size
 
-                            prev_dA[:, f, row, col] = dZ[:, f, i, j] * self.dZ_prev_dA[:, f, row, col] # calc dA of previous layer
+                    max_rows = self.max_indices[:, f, i, j] // self.pool_size
+                    max_cols = self.max_indices[:, f, i, j] % self.pool_size
+
+                    prev_dA[np.arange(self.batch_size), f, (row+max_rows).astype(int), (col+max_cols).astype(int)] = dZ[:, f, i, j] # calc dA of previous layer
 
         return prev_dA
         
