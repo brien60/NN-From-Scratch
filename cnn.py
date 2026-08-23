@@ -30,6 +30,8 @@ class Layer:
 
     def forward(self, prev_activations):
         prev_activations = prev_activations.reshape(self.batch_size, self.k)
+        self.prev_activations = prev_activations
+
         # (j, k) @ (batch_size, k).T = (j, batch_size)
         z = np.add((self.W @ prev_activations.T).T, self.b) # (batch_size, j) 
 
@@ -44,18 +46,17 @@ class Layer:
         
 
 
-    def backward(self, prev_activations, y = None, next_W_T = None, next_dZ = None):
+    def backward(self, y = None, next_W_T = None, next_dZ = None):
         if self.output_layer:
             dZ = np.subtract(self.activations, y) # BP1, BCE, NLL
             # print(f"output layer: {dZ.shape}")
-
         else:
             # (j, n) @ (batch_size, n).T = (j, batch_size)
             dZ = (next_W_T @ next_dZ.T).T * np_dsigmoid(self.weighted_inputs) # BP2
             
         # BP3
         # (batch_size, j).T @ (batch_size, k) = (j, k)
-        dW = dZ.T @ prev_activations.reshape(self.batch_size, self.k)
+        dW = dZ.T @ self.prev_activations
 
 
         # BP4
@@ -161,7 +162,10 @@ class Convolution:
                 p+=1
 
         z = W_matrix @ patches_matrix + self.b[None, :, None] # (batch_size, filters, output_size**2)
+
+        self.patches_matrix = patches_matrix
         self.weighted_inputs = z.reshape(self.batch_size, self.filters, self.output_size, self.output_size)
+
         f_maps = np_sigmoid(z.reshape(self.batch_size, -1)).reshape(self.batch_size, self.filters, self.output_size, self.output_size)
 
         return f_maps
@@ -170,7 +174,7 @@ class Convolution:
             
 
 
-    def backward(self, prev_activations, dA):
+    def backward(self, dA):
         # prev_activations: (batch_size, channels, input_size, input_size)
         # dA: (batch_size, channels, output_size, output_size)
 
@@ -191,10 +195,15 @@ class Convolution:
                                 row = self.stride * i + u
                                 col = self.stride * j + v
 
-                                self.dW[f][c][u][v] += np.sum(dZ[:, f, i, j] * prev_activations[:, c, row, col]) # update weight gradient
+                                # self.dW[f][c][u][v] += np.sum(dZ[:, f, i, j] * prev_activations[:, c, row, col]) # update weight gradient
                                 prev_dA[:, c, row, col] += dZ[:, f, i, j] * W[u][v] # calculate dA for the previous layer
- 
 
+        # (filters, batch_size * output_size**2) @ (batch_size * output_size**2, c*k*k) -> (filters, c*k*k)
+        self.dW = dZ.transpose(1, 0, 2, 3).reshape(self.filters, -1) @ self.patches_matrix.transpose(0, 2, 1).reshape(-1, self.channels*self.kernel_size**2)
+        self.dW = self.dW.reshape(self.filters, self.channels, self.kernel_size, self.kernel_size)
+ 
+        # todo: matrix implementation 
+        # vectorize hlepers.py
         return prev_dA
 
     
@@ -326,20 +335,20 @@ class CNN:
         for l in range(L-1, -1, -1): # go from L-1 to 0
             layer = self.layers[l]
 
-            if (l-1 < 0): prev_activations = self.x
-            else: prev_activations = self.activations_list[l-1]
+            # if (l-1 < 0):  = self.x
+            # else: prev_activations = self.activations_list[l-1]
 
             if type(layer) == Layer: 
                 if layer.output_layer:
-                    next_dZ = layer.backward(prev_activations, y=y)
+                    next_dZ = layer.backward(y=y)
                 else:
-                    next_dZ = layer.backward(prev_activations, next_W_T=self.layers[l+1].W.T, next_dZ=next_dZ)
+                    next_dZ = layer.backward(next_W_T=self.layers[l+1].W.T, next_dZ=next_dZ)
 
             if type(layer) == MaxPool:
                 prev_dA = layer.backward(self.layers[l+1].W.T, next_dZ)
 
             if type(layer) == Convolution:
-                prev_dA = layer.backward(prev_activations, prev_dA)
+                prev_dA = layer.backward(prev_dA)
 
         
     def step(self, optim):
