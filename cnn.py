@@ -185,7 +185,7 @@ class Convolution:
         for f in range(self.filters):
             for i in range(self.output_size):
                 for j in range(self.output_size):
-                    dZ[:, f, i, j] = dA[:, f, i, j] * list_dsigmoid(self.weighted_inputs[:, f, i, j]) # calculcate dZ
+                    dZ[:, f, i, j] = dA[:, f, i, j] * np_dsigmoid(self.weighted_inputs[:, f, i, j]) # calculcate dZ
                     self.dB[f] += np.sum(dZ[:, f, i, j]) # update bias gradient
 
                     for u in range(self.kernel_size):

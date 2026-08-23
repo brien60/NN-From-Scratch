@@ -89,18 +89,7 @@ def vector_dsigmoid(z):
     return [[dsigmoid(z[i][0])] for i in range(len(z))]
 
 def np_sigmoid(z):
-    result = np.zeros_like(z)
-    for b in range(z.shape[0]):
-        for i in range(z.shape[1]):
-            result[b][i] = sigmoid(z[b][i])
-    return result
+    return 1 / (1 + np.exp(-z))
 
 def np_dsigmoid(z):
-    result = np.zeros_like(z)
-    for b in range(z.shape[0]):
-        for i in range(z.shape[1]):
-            result[b][i] = dsigmoid(z[b][i])
-    return result
-
-def list_dsigmoid(z):
-    return np.array([dsigmoid(z[i]) for i in range(z.shape[0])])
+    return np_sigmoid(z) * (1-np_sigmoid(z))
