@@ -287,9 +287,15 @@ class MaxPool:
 
     
 
-    def backward(self, next_W_T, next_dZ):
+    def backward(self,  next_layer_type, dA = None, next_W_T=None, next_dZ=None):
         # (f_maps*output_size**2, n) @ (batch_size, n).T = (f_maps*output_size**2, batch_size)
-        dZ = np.reshape((next_W_T @ next_dZ.T).T, (self.batch_size, self.f_maps, self.output_size, self.output_size))
+
+        if next_layer_type == "Layer": 
+            dZ = np.reshape((next_W_T @ next_dZ.T).T, (self.batch_size, self.f_maps, self.output_size, self.output_size))
+
+        if next_layer_type == "Conv":
+            dZ = dA
+
         prev_dA = np.zeros(shape = (self.batch_size, self.f_maps, self.input_size, self.input_size)) 
 
         for f in range(self.f_maps):
@@ -314,10 +320,13 @@ class CNN:
 
         self.conv1 = Convolution(batch_size=batch_size, filters=filters_list[0], channels=1, kernel_size=5, input_size=28)
         self.pool1 = MaxPool(batch_size=batch_size, f_maps=filters_list[0], input_size=self.conv1.output_size, pool_size=2)
+
+        self.conv2 = Convolution(batch_size=batch_size, filters=filters_list[1], channels=filters_list[0], kernel_size=5, input_size=self.pool1.output_size)
+        self.pool2 = MaxPool(batch_size=batch_size, f_maps=filters_list[1], input_size=self.conv2.output_size, pool_size=2)
         
         self.layer1 = Layer(
             batch_size=batch_size,
-            input_neurons=self.pool1.f_maps * self.pool1.output_size ** 2,
+            input_neurons=self.pool2.f_maps * self.pool2.output_size ** 2,
             output_neurons=100,
         )
         self.classifier = Layer(
@@ -326,7 +335,7 @@ class CNN:
             output_layer=True, softmax=True
         )
 
-        self.layers = [self.conv1, self.pool1, self.layer1, self.classifier]
+        self.layers = [self.conv1, self.pool1, self.conv2, self.pool2, self.layer1, self.classifier]
         self.x = None
 
     def __call__(self, x):
@@ -358,7 +367,11 @@ class CNN:
                     next_dZ = layer.backward(next_W_T=self.layers[l+1].W.T, next_dZ=next_dZ)
 
             if type(layer) == MaxPool:
-                prev_dA = layer.backward(self.layers[l+1].W.T, next_dZ)
+                if type(self.layers[l+1]) == Layer: 
+                    prev_dA = layer.backward("Layer", next_W_T = self.layers[l+1].W.T, next_dZ=next_dZ)
+
+                if type(self.layers[l+1]) == Convolution: 
+                    prev_dA = layer.backward("Conv", dA=prev_dA)
 
             if type(layer) == Convolution:
                 prev_dA = layer.backward(prev_dA)

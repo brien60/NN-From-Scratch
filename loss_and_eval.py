@@ -40,5 +40,9 @@ def L2(model, optim):
     return lambda_over_2n * weight_squared_sum
 
 
-def acc(y, a):
+def batch_acc(y, a):
     return np.sum(np.argmax(y, axis=1) == np.argmax(a, axis=1))
+
+
+def acc(y, a):
+    return np.argmax(y) == np.argmax(a)
