@@ -59,6 +59,7 @@ def vector_softmax(z):
         
 
 def np_softmax(z):
+    # z = z - np.max(z, axis=1, keepdims = True)
     exp = np.exp(z)
     return exp / np.sum(exp, axis = 1, keepdims=True)
 
@@ -93,3 +94,6 @@ def np_sigmoid(z):
 
 def np_dsigmoid(z):
     return np_sigmoid(z) * (1-np_sigmoid(z))
+
+def relu(z):
+    return np.maximum(0, z)

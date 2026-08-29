@@ -23,6 +23,9 @@ def NLL(y, a):
 
 def batch_NLL(y, a):
     b = y.shape[0]
+    # probs = a[np.arange(b), np.argmax(y, axis=1)]
+    # return np.sum(-np.log(np.maximum(probs, 1e-15)))
+
     return np.sum(-np.log(a[np.arange(b), np.argmax(y, axis=1)]))
 
 # L2 Regularization

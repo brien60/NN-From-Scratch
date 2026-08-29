@@ -8,12 +8,13 @@ from optim import *
 
 
 class Layer:
-    def __init__(self, batch_size, input_neurons, output_neurons, softmax = False, output_layer = False):
+    def __init__(self, batch_size, input_neurons, output_neurons, softmax = False, output_layer = False, dropout = 0.0):
         self.batch_size = batch_size
         self.j = output_neurons
         self.k = input_neurons
 
         self.W = np.random.normal(scale = 1/math.sqrt(self.k), size = (self.j, self.k))
+        # self.b = np.zeros(shape = self.j)
         self.b = np.random.normal(size = self.j)
 
         self.activations = None
@@ -22,13 +23,15 @@ class Layer:
         self.softmax = softmax
         self.output_layer = output_layer
 
+        self.dropout = dropout
+
         self.clear_grad()
 
-    def __call__(self, prev_activations):
-        return self.forward(prev_activations)
+    def __call__(self, prev_activations, training):
+        return self.forward(prev_activations, training)
 
 
-    def forward(self, prev_activations):
+    def forward(self, prev_activations, training):
         prev_activations = prev_activations.reshape(self.batch_size, self.k)
         self.prev_activations = prev_activations
 
@@ -36,7 +39,11 @@ class Layer:
         z = np.add((self.W @ prev_activations.T).T, self.b) # (batch_size, j) 
 
         if self.softmax: a = np_softmax(z)
-        else: a = np_sigmoid(z)
+        else: a = relu(z)
+
+        if training: 
+            self.dropout_mask = np.random.binomial(1, 1-self.dropout, a.shape)
+            a *= self.dropout_mask
 
         self.activations = a
         self.weighted_inputs = z
@@ -52,7 +59,8 @@ class Layer:
             # print(f"output layer: {dZ.shape}")
         else:
             # (j, n) @ (batch_size, n).T = (j, batch_size)
-            dZ = (next_W_T @ next_dZ.T).T * self.activations * (1-self.activations) # BP2
+            dZ = (next_W_T @ next_dZ.T).T * (self.weighted_inputs > 0) # BP2
+            dZ *= self.dropout_mask
             
         # BP3
         # (batch_size, j).T @ (batch_size, k) = (j, k)
@@ -88,6 +96,7 @@ class Convolution:
             scale = 1/math.sqrt(self.channels * self.kernel_size ** 2),
             size = (self.filters, self.channels, self.kernel_size, self.kernel_size)
         )
+        # self.b = np.zeros(shape = self.filters)
         self.b = np.random.normal(
             size = self.filters
         )
@@ -96,8 +105,8 @@ class Convolution:
         self.clear_grad()
 
 
-    def __call__(self, x):
-            return self.forward(x)
+    def __call__(self, x, training):
+            return self.forward(x, training)
 
     
     def clear_grad(self):
@@ -144,7 +153,7 @@ class Convolution:
 
 
     # matrix implementation
-    def forward(self, x):
+    def forward(self, x, training):
         # x: (batch_size, channels, input_size, input_size)
         W_matrix =  self.W.reshape(self.filters, -1) # (filters, c*k*k)
         patches_matrix = np.zeros((self.batch_size, self.channels * self.kernel_size ** 2, self.output_size ** 2)) # (batch_size, c*k*k, output_size**2)
@@ -166,7 +175,7 @@ class Convolution:
         self.patches_matrix = patches_matrix
         self.weighted_inputs = z.reshape(self.batch_size, self.filters, self.output_size, self.output_size)
 
-        f_maps = np_sigmoid(self.weighted_inputs)
+        f_maps = relu(self.weighted_inputs)
 
         self.activations = f_maps
 
@@ -180,10 +189,9 @@ class Convolution:
         # prev_activations: (batch_size, channels, input_size, input_size)
         # dA: (batch_size, channels, output_size, output_size)
 
-        dZ = np.zeros(shape = (self.batch_size, self.filters, self.output_size, self.output_size))
         prev_dA = np.zeros(shape = (self.batch_size, self.channels, self.input_size, self.input_size))
 
-        dZ = dA * self.activations * (1-self.activations) # calculcate dZ
+        dZ = dA * (self.weighted_inputs > 0) # calculcate dZ
         self.dB += np.sum(dZ.transpose(1, 0, 2, 3).reshape(self.filters, -1), axis=1) # update bias gradient
 
 
@@ -225,11 +233,13 @@ class Convolution:
 
 
 class MaxPool:
-    def __init__(self, batch_size, f_maps, input_size, pool_size):
+    def __init__(self, batch_size, f_maps, input_size, pool_size, dropout = 0.0):
         self.batch_size = batch_size
         self.f_maps = f_maps
         self.input_size = input_size
         self.pool_size = pool_size
+
+        self.dropout = dropout
 
         assert self.input_size % self.pool_size == 0, f"Pool size {self.pool_size} is not valid for {self.input_size}x{self.input_size} feature maps"
         self.output_size = self.input_size // self.pool_size
@@ -237,10 +247,10 @@ class MaxPool:
         # self.dZ_prev_dA = np.zeros(shape = (self.batch_size, self.f_maps, self.input_size, self.input_size))
 
 
-    def __call__(self, f_maps):
-        return self.forward(f_maps)
+    def __call__(self, f_maps, training):
+        return self.forward(f_maps, training)
 
-    def forward(self, f_maps):
+    def forward(self, f_maps, training):
         self.max_indices = np.zeros(shape = (self.batch_size, self.f_maps, self.output_size, self.output_size))
 
         pooled_f_maps = np.zeros(shape = (self.f_maps, self.batch_size, self.output_size, self.output_size))
@@ -282,7 +292,14 @@ class MaxPool:
             pooled_f_maps[f] = pooled_f_map
 
         # SWAPPING dimensions, not combining them
-        return pooled_f_maps.transpose(1, 0, 2, 3)
+        
+        pooled_f_maps = pooled_f_maps.transpose(1, 0, 2, 3)
+        
+        if training: 
+            self.dropout_mask = np.random.binomial(1, 1-self.dropout, pooled_f_maps.shape)
+            pooled_f_maps *= self.dropout_mask
+
+        return pooled_f_maps
 
 
     
@@ -295,6 +312,8 @@ class MaxPool:
 
         if next_layer_type == "Conv":
             dZ = dA
+
+        dZ *= self.dropout_mask
 
         prev_dA = np.zeros(shape = (self.batch_size, self.f_maps, self.input_size, self.input_size)) 
 
@@ -318,36 +337,72 @@ class MaxPool:
 class CNN:
     def __init__(self, batch_size, filters_list):
 
-        self.conv1 = Convolution(batch_size=batch_size, filters=filters_list[0], channels=1, kernel_size=5, input_size=28)
-        self.pool1 = MaxPool(batch_size=batch_size, f_maps=filters_list[0], input_size=self.conv1.output_size, pool_size=2)
+        self.conv1 = Convolution(
+            batch_size=batch_size, 
+            filters=filters_list[0], 
+            channels=1, 
+            kernel_size=5, 
+            input_size=28
+        )
+        self.pool1 = MaxPool(
+            batch_size=batch_size, 
+            f_maps=filters_list[0], 
+            input_size=self.conv1.output_size, 
+            pool_size=2
+        )
 
-        self.conv2 = Convolution(batch_size=batch_size, filters=filters_list[1], channels=filters_list[0], kernel_size=5, input_size=self.pool1.output_size)
-        self.pool2 = MaxPool(batch_size=batch_size, f_maps=filters_list[1], input_size=self.conv2.output_size, pool_size=2)
+        self.conv2 = Convolution(
+            batch_size=batch_size, 
+            filters=filters_list[1], 
+            channels=filters_list[0], 
+            kernel_size=5, 
+            input_size=self.pool1.output_size
+        )
+        self.pool2 = MaxPool(
+            batch_size=batch_size, 
+            f_maps=filters_list[1], 
+            input_size=self.conv2.output_size, 
+            pool_size=2, 
+            dropout=0.1
+        )
         
         self.layer1 = Layer(
             batch_size=batch_size,
             input_neurons=self.pool2.f_maps * self.pool2.output_size ** 2,
-            output_neurons=100,
+            output_neurons=1000,
+            dropout=0.1
+        )
+
+        self.layer2 = Layer(
+            batch_size=batch_size,
+            input_neurons=1000,
+            output_neurons=1000,
+            dropout=0.1
         )
         self.classifier = Layer(
             batch_size=batch_size,
-            input_neurons=100, output_neurons=10,
+            input_neurons=1000, output_neurons=10,
             output_layer=True, softmax=True
         )
 
-        self.layers = [self.conv1, self.pool1, self.conv2, self.pool2, self.layer1, self.classifier]
+        self.layers = [
+            self.conv1, self.pool1, 
+            self.conv2, self.pool2, 
+            self.layer1, self.layer2,
+            self.classifier
+        ]
         self.x = None
 
-    def __call__(self, x):
-        return self.forward(x)
+    def __call__(self, x, training = True):
+        return self.forward(x, training)
 
-    def forward(self, x):
+    def forward(self, x, training):
         self.activations_list = []
         self.x = x
         
         output = x
         for layer in self.layers:
-            output = layer(output)
+            output = layer(output, training)
             self.activations_list.append(output)
 
         return output
