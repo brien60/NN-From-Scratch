@@ -335,7 +335,7 @@ class MaxPool:
 
 
 class CNN:
-    def __init__(self, batch_size, filters_list):
+    def __init__(self, batch_size, filters_list, dropout):
 
         self.conv1 = Convolution(
             batch_size=batch_size, 
@@ -363,21 +363,21 @@ class CNN:
             f_maps=filters_list[1], 
             input_size=self.conv2.output_size, 
             pool_size=2, 
-            dropout=0.1
+            dropout=dropout
         )
         
         self.layer1 = Layer(
             batch_size=batch_size,
             input_neurons=self.pool2.f_maps * self.pool2.output_size ** 2,
             output_neurons=1000,
-            dropout=0.1
+            dropout=dropout
         )
 
         self.layer2 = Layer(
             batch_size=batch_size,
             input_neurons=1000,
             output_neurons=1000,
-            dropout=0.1
+            dropout=dropout
         )
         self.classifier = Layer(
             batch_size=batch_size,
